@@ -118,7 +118,7 @@ def plot_results():
     plt.ylabel("Number of Visitors")
 
     plt.subplot(1, 3, 2)
-    labels = [f"Ride {i}" for i in range(NUM_RIDES)]
+    labels = [f"Ride {i+1}" for i in range(NUM_RIDES)]
     plt.pie(ride_usage_count, labels=labels, autopct='%1.1f%%', startangle=140)
     plt.title("Ride Usage Distribution")
 
