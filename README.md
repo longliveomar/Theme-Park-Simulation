@@ -64,7 +64,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 - This project uses the `SimPy` library for simulation and `Matplotlib` for plotting.
 - Special thanks to the contributors of these libraries for making the project possible.
-
-## Example Output
-
-### Simulation Results Table:
