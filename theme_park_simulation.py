@@ -1,10 +1,18 @@
+## -----------------------------------------------------------------------------
+## Code Author          : Omar Alaa Eldeen
+## Created On           : Sunday - 4th May 2026
+## File Name            : theme_park_simulation.py
+## Code Title           : Theme Park Ride Simulation
+## Description          : This code simulates a theme park ride system using SimPy.
+## -----------------------------------------------------------------------------
+
 import simpy
 import random
 import matplotlib.pyplot as plt
 import numpy as np
 import tkinter as tk
 from tkinter import messagebox
-from tabulate import tabulate  # Importing tabulate module
+from tabulate import tabulate  
 
 # Constants
 RANDOM_SEED = 42
