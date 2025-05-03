@@ -80,7 +80,7 @@ def print_summary():
     # Prepare data for the simulation table
     table_data = []
     for i in range(NUM_RIDES):
-        table_data.append([f"Ride {i}", ride_usage_count[i]])
+        table_data.append([f"Ride {i+1}", ride_usage_count[i]])
 
     headers = ["Ride", "Usage Count"]
 
