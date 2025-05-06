@@ -12,29 +12,31 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tkinter as tk
 from tkinter import messagebox
-from tabulate import tabulate  
+from tabulate import tabulate
 
 # Constants
 RANDOM_SEED = 42
 SIMULATION_TIME = 480  # 8 hours
 ARRIVAL_RATE = [5, 10, 15]  # Visitors per minute in each phase
 RIDE_CAPACITY = 10
-RIDE_DURATION = 5
 NUM_RIDES = 3
+RIDE_DURATION = [random.triangular(4, 6, 5) for _ in range(NUM_RIDES)]  # Triangular distribution
 
 # Data tracking
 queue_times = []
 ride_usage_count = [0] * NUM_RIDES
 arrival_times = []
+ride_failures = [0] * NUM_RIDES
 
 # Theme Park Environment
 class ThemePark:
     def __init__(self, env):
         self.env = env
         self.rides = [simpy.Resource(env, capacity=RIDE_CAPACITY) for _ in range(NUM_RIDES)]
+        self.ride_status = [True] * NUM_RIDES  # True = operational
 
     def ride(self, visitor_id, ride_id):
-        yield self.env.timeout(RIDE_DURATION)
+        yield self.env.timeout(RIDE_DURATION[ride_id])
         print(f"[{self.env.now:>3}m] 🎢 Visitor {visitor_id} finished Ride {ride_id}")
 
 # Visitor Process
@@ -43,7 +45,17 @@ def visitor(env, visitor_id, park):
     arrival_times.append(arrival_time)
     print(f"[{arrival_time:>3}m] 👤 Visitor {visitor_id} arrived")
 
+    attempts = 0
     ride_id = random.randint(0, NUM_RIDES - 1)
+    while not park.ride_status[ride_id] and attempts < 5:
+        print(f"[{env.now:>3}m] ❌ Visitor {visitor_id} found Ride {ride_id} out of service.")
+        ride_id = random.randint(0, NUM_RIDES - 1)
+        attempts += 1
+
+    if not park.ride_status[ride_id]:
+        print(f"[{env.now:>3}m] ❌ Visitor {visitor_id} couldn't find any working ride.")
+        return
+
     with park.rides[ride_id].request() as request:
         queue_start = env.now
         yield request
@@ -65,46 +77,52 @@ def arrival_process(env, park):
             rate = ARRIVAL_RATE[1]
         else:
             rate = ARRIVAL_RATE[2]
-        interval = 60 / rate
+        interval = random.expovariate(rate / 60)  # Exponential distribution for interarrival
+        yield env.timeout(interval)
 
-        yield env.timeout(random.expovariate(1 / interval))
         visitor_id += 1
         env.process(visitor(env, visitor_id, park))
 
-# Summary Print with Table Output
+# Ride Failure Generator
+def ride_failure(env, park, ride_id):
+    while True:
+        fail_time = random.expovariate(1 / 90)  # ~90 mins between failures
+        yield env.timeout(fail_time)
+        park.ride_status[ride_id] = False
+        ride_failures[ride_id] += 1
+        print(f"[{env.now:>3}m] ⚠️ Ride {ride_id} FAILED!")
+
+        repair_time = random.expovariate(1 / 15)  # ~15 mins to repair
+        yield env.timeout(repair_time)
+        park.ride_status[ride_id] = True
+        print(f"[{env.now:>3}m] ✅ Ride {ride_id} REPAIRED.")
+
+# Summary
 def print_summary():
     total = len(queue_times)
-    avg_q = np.mean(queue_times)
-    utilization = sum(ride_usage_count) * RIDE_DURATION / (SIMULATION_TIME * NUM_RIDES)
+    avg_q = np.mean(queue_times) if queue_times else 0
+    utilization = sum(ride_usage_count) * np.mean(RIDE_DURATION) / (SIMULATION_TIME * NUM_RIDES)
 
-    # Prepare data for the simulation table
+    # Table
     table_data = []
     for i in range(NUM_RIDES):
-        table_data.append([f"Ride {i+1}", ride_usage_count[i]])
+        table_data.append([f"Ride {i}", ride_usage_count[i], ride_failures[i]])
 
-    headers = ["Ride", "Usage Count"]
+    headers = ["Ride", "Usage Count", "Failures"]
 
-    # Print the table
     print("\n📊 Simulation Results Table:")
     print(tabulate(table_data, headers, tablefmt="pretty"))
 
-    # Print other calculated results
     print("\n📊 Simulation Summary:")
     print(f"- Total visitors: {total}")
     print(f"- Average queue time: {avg_q:.2f} minutes")
-    for i, count in enumerate(ride_usage_count):
-        print(f"- Ride {i} was used {count} times")
     print(f"- Average ride utilization: {utilization:.2%}")
-    
-    # Simple human-readable messages
-    print("\n Total visitors: This is the number of people who visited the park.")
-    print(f"⏳ Average queue time: Visitors waited an average of {avg_q:.2f} minutes.")
-    print("🎢 Ride usage: We tracked how often each ride was used to understand popularity.")
-    print(f"📊 Ride utilization: The rides were utilized at an average rate of {utilization:.2%}.")
-    
-    summary = f"""📊 Simulation Summary: - Total visitors: {total} - Average queue time: {avg_q:.2f} minutes - Ride utilization: {utilization:.2%}"""
     for i, count in enumerate(ride_usage_count):
-        summary += f"\n- Ride {i} was used {count} times"
+        print(f"- Ride {i} was used {count} times and failed {ride_failures[i]} times")
+
+    summary = f"📊 Simulation Summary:\n- Total visitors: {total}\n- Avg queue time: {avg_q:.2f} min\n- Utilization: {utilization:.2%}"
+    for i, count in enumerate(ride_usage_count):
+        summary += f"\n- Ride {i}: {count} uses, {ride_failures[i]} failures"
     messagebox.showinfo("Simulation Summary", summary)
 
 # Plotting
@@ -118,7 +136,7 @@ def plot_results():
     plt.ylabel("Number of Visitors")
 
     plt.subplot(1, 3, 2)
-    labels = [f"Ride {i+1}" for i in range(NUM_RIDES)]
+    labels = [f"Ride {i}" for i in range(NUM_RIDES)]
     plt.pie(ride_usage_count, labels=labels, autopct='%1.1f%%', startangle=140)
     plt.title("Ride Usage Distribution")
 
@@ -133,18 +151,21 @@ def plot_results():
     plt.tight_layout()
     plt.show()
 
-# Main Simulation Function
+# Run Simulation
 def run_simulation():
-    global queue_times, ride_usage_count, arrival_times
+    global queue_times, ride_usage_count, arrival_times, ride_failures
     queue_times = []
     ride_usage_count = [0] * NUM_RIDES
     arrival_times = []
+    ride_failures = [0] * NUM_RIDES
 
     print("🎡 Theme Park Ride Simulation Starting...")
     random.seed(RANDOM_SEED)
     env = simpy.Environment()
     park = ThemePark(env)
     env.process(arrival_process(env, park))
+    for i in range(NUM_RIDES):
+        env.process(ride_failure(env, park, i))
     env.run(until=SIMULATION_TIME)
 
     print_summary()
@@ -167,3 +188,4 @@ run_button = tk.Button(root, text="Run Simulation", font=("Arial", 13), command=
 run_button.pack(pady=20)
 
 root.mainloop()
+
